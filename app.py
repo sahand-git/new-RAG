@@ -240,6 +240,30 @@ with st.sidebar:
 
     # Ingestion Status & Actions
     st.subheader("📚 Document Knowledge Base")
+
+    # Interactive File Uploader
+    uploaded_files = st.file_uploader(
+        "📤 Upload Manuals & PDFs",
+        type=["pdf"],
+        accept_multiple_files=True,
+        help="Drag and drop technical manuals, schematics, or specification PDFs here to add them to your local library.",
+    )
+
+    if uploaded_files:
+        newly_saved = 0
+        for uploaded_file in uploaded_files:
+            dest = DOCUMENTS_DIR / uploaded_file.name
+            # Write file if new or size changed
+            if not dest.exists() or dest.stat().st_size != uploaded_file.size:
+                with open(dest, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                newly_saved += 1
+        if newly_saved > 0:
+            st.toast(f"Saved {newly_saved} new PDF(s) to library!", icon="📁")
+            st.rerun()
+
+    st.caption(f"📁 Local storage: `{DOCUMENTS_DIR}`")
+
     try:
         col = get_chroma_collection()
         chunk_count = col.count()
@@ -259,6 +283,8 @@ with st.sidebar:
     if st.button("🔄 Scan & Ingest PDFs", use_container_width=True, type="primary"):
         if not st.session_state["api_key"]:
             st.error("API Key is required to compute embeddings.")
+        elif len(available_pdfs) == 0:
+            st.warning("Please upload at least one PDF above or click 'Generate Sample Technical Manuals'.")
         else:
             progress_bar = st.progress(0.0)
             status_text = st.empty()
@@ -301,11 +327,26 @@ with st.sidebar:
     if available_pdfs:
         for p in available_pdfs:
             is_active = (p.name == st.session_state["active_doc"])
-            label = f"{'🟢' if is_active else '📄'} {p.name}"
-            if st.button(label, key=f"lib_doc_{p.name}", use_container_width=True):
-                set_active_document_and_page(p.name, 1)
+            doc_col1, doc_col2 = st.columns([4, 1])
+            with doc_col1:
+                label = f"{'🟢' if is_active else '📄'} {p.name}"
+                if st.button(label, key=f"lib_doc_{p.name}", use_container_width=True):
+                    set_active_document_and_page(p.name, 1)
+            with doc_col2:
+                if st.button("🗑️", key=f"del_doc_{p.name}", help=f"Delete {p.name} from documents"):
+                    try:
+                        p.unlink(missing_ok=True)
+                        col = get_chroma_collection()
+                        col.delete(where={"file_name": p.name})
+                    except Exception:
+                        pass
+                    if st.session_state.get("active_doc") == p.name:
+                        st.session_state["active_doc"] = None
+                        st.session_state["active_doc_path"] = None
+                    st.toast(f"Removed {p.name}", icon="🗑️")
+                    st.rerun()
     else:
-        st.caption("No PDFs found in ./documents directory.")
+        st.caption("No PDFs found in ./documents directory. Upload PDFs above to begin.")
 
 
 # ---------------------------------------------------------
@@ -314,6 +355,35 @@ with st.sidebar:
 st.markdown('<span class="rag-badge">Professor Glitch Architecture</span>', unsafe_allow_html=True)
 st.title("Localized Technical Manual RAG")
 st.caption("Factual, verified answers with real-time synchronized side-by-side visual PDF citations.")
+
+# Quick PDF Uploader Expander
+with st.expander("📤 Upload / Add PDF Manuals to Library", expanded=(len(available_pdfs) == 0)):
+    up_col1, up_col2 = st.columns([3, 1])
+    with up_col1:
+        main_uploads = st.file_uploader(
+            "Upload or drag & drop PDF files directly:",
+            type=["pdf"],
+            accept_multiple_files=True,
+            key="main_pdf_uploader",
+        )
+        if main_uploads:
+            saved = 0
+            for mu in main_uploads:
+                dest = DOCUMENTS_DIR / mu.name
+                if not dest.exists() or dest.stat().st_size != mu.size:
+                    with open(dest, "wb") as f:
+                        f.write(mu.getbuffer())
+                    saved += 1
+            if saved > 0:
+                st.toast(f"Uploaded {saved} new PDF(s) to library!", icon="📁")
+                st.rerun()
+    with up_col2:
+        st.write("")
+        st.write("")
+        if st.button("✨ Sample Manuals", use_container_width=True, help="Load pre-built multi-page robotics & turbine manuals"):
+            generate_all_samples()
+            st.toast("Sample manuals loaded!", icon="📄")
+            st.rerun()
 
 # Split-Screen Layout: Left Column = Chat, Right Column = Live PDF Viewer
 chat_col, viewer_col = st.columns([1, 1], gap="medium")
