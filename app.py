@@ -201,9 +201,14 @@ with st.sidebar:
     # Model Selection
     model_choice = st.selectbox(
         "Gemini Model",
-        options=["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.5-pro"],
+        options=[
+            "gemini-3.8-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+        ],
         index=0,
-        help="gemini-2.5-flash offers optimal balance of speed, reasoning, and strict instruction following.",
+        help="gemini-3.8-flash is the newest high-speed flagship model with enhanced reasoning and strict guardrail adherence.",
     )
     st.session_state["selected_model"] = model_choice
 

@@ -13,9 +13,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DOCUMENTS_DIR = Path(os.getenv("DOCUMENTS_DIR", str(BASE_DIR / "documents"))).resolve()
 VECTOR_DB_DIR = Path(os.getenv("CHROMA_DB_DIR", str(BASE_DIR / "vector_db"))).resolve()
 
-# Gemini Models
-DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-DEFAULT_EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-004")
+# Gemini Models (Updated to newest Gemini 3.8 Flash & Gemini Embedding 001)
+DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+DEFAULT_EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
 
 # Chunking Parameters (500 tokens ~ 2000 characters, 50 tokens ~ 200 characters)
 CHUNK_SIZE_TOKENS = int(os.getenv("CHUNK_SIZE_TOKENS", "500"))

@@ -164,25 +164,49 @@ def generate_gemini_embeddings(
 ) -> List[List[float]]:
     """
     Generate embeddings for a list of texts using the official google-genai SDK.
-    Configured with v1beta endpoint to support text-embedding-004.
+    Supports gemini-embedding-001, text-embedding-005, and text-embedding-004 with
+    automatic model fallback and detailed error reporting.
     """
     if not api_key:
         raise ValueError("Gemini API key is required to generate embeddings.")
 
+    from google.genai import types
+
     client = create_genai_client(api_key=api_key)
     all_embeddings = []
 
-    # Model candidates to try if specified model returns 404
-    candidate_models = [model]
-    if not model.startswith("models/"):
-        candidate_models.append(f"models/{model}")
-    else:
-        candidate_models.append(model.replace("models/", ""))
-    if "text-embedding-004" not in candidate_models:
-        candidate_models.append("text-embedding-004")
-    candidate_models.append("embedding-001")
+    # Priority candidate models: newest gemini-embedding-001 first
+    raw_candidates = [
+        model,
+        "gemini-embedding-001",
+        "models/gemini-embedding-001",
+        "text-embedding-005",
+        "models/text-embedding-005",
+        "text-embedding-004",
+        "models/text-embedding-004",
+        "embedding-001",
+        "models/embedding-001",
+    ]
+    # Deduplicate while preserving order
+    seen = set()
+    candidate_models = [c for c in raw_candidates if c and not (c in seen or seen.add(c))]
 
     working_model = None
+    last_error_msg = ""
+
+    def _call_embed(mdl: str, content_payload):
+        # Try with output_dimensionality=768 first, then fallback to default
+        try:
+            return client.models.embed_content(
+                model=mdl,
+                contents=content_payload,
+                config=types.EmbedContentConfig(output_dimensionality=768),
+            )
+        except Exception:
+            return client.models.embed_content(
+                model=mdl,
+                contents=content_payload,
+            )
 
     for i in range(0, len(texts), batch_size):
         batch = texts[i:i + batch_size]
@@ -191,41 +215,38 @@ def generate_gemini_embeddings(
         models_to_attempt = [working_model] if working_model else candidate_models
 
         for candidate in models_to_attempt:
-            if not candidate:
-                continue
             try:
-                response = client.models.embed_content(
-                    model=candidate,
-                    contents=batch,
-                )
-                batch_vectors = [emb.values for emb in response.embeddings]
-                all_embeddings.extend(batch_vectors)
-                working_model = candidate
-                embedded = True
-                break
+                response = _call_embed(candidate, batch)
+                if response.embeddings:
+                    batch_vectors = [emb.values for emb in response.embeddings]
+                    all_embeddings.extend(batch_vectors)
+                    working_model = candidate
+                    embedded = True
+                    break
             except Exception as batch_exc:
-                err_msg = str(batch_exc)
-                if "404" in err_msg or "not found" in err_msg.lower():
-                    continue
-                else:
-                    # Retry item by item if batch fails
-                    try:
-                        for single_text in batch:
-                            s_resp = client.models.embed_content(
-                                model=candidate,
-                                contents=single_text,
-                            )
-                            if s_resp.embeddings:
-                                all_embeddings.append(s_resp.embeddings[0].values)
+                last_error_msg = str(batch_exc)
+                # Try single-item submission if batch was rejected
+                try:
+                    single_vectors = []
+                    for single_text in batch:
+                        s_resp = _call_embed(candidate, single_text)
+                        if s_resp.embeddings:
+                            single_vectors.append(s_resp.embeddings[0].values)
+                        else:
+                            break
+                    if len(single_vectors) == len(batch):
+                        all_embeddings.extend(single_vectors)
                         working_model = candidate
                         embedded = True
                         break
-                    except Exception:
-                        continue
+                except Exception as single_exc:
+                    last_error_msg = str(single_exc)
+                    continue
 
         if not embedded:
             raise RuntimeError(
-                f"Failed to generate embeddings. Tried models: {candidate_models}. "
+                f"Failed to generate embeddings. Tried models: {candidate_models}.\n"
+                f"Google API Response: {last_error_msg}\n"
                 "Please verify your Gemini API key has access to the Gemini Embeddings API."
             )
 

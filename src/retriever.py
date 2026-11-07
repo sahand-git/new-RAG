@@ -40,29 +40,44 @@ class DocumentRetriever:
 
     def embed_query(self, query: str) -> List[float]:
         """Generate embedding vector for search query with model fallback."""
-        candidates = [self.embedding_model]
-        if not self.embedding_model.startswith("models/"):
-            candidates.append(f"models/{self.embedding_model}")
-        else:
-            candidates.append(self.embedding_model.replace("models/", ""))
-        candidates.append("text-embedding-004")
-        candidates.append("embedding-001")
+        from google.genai import types
 
+        raw_candidates = [
+            self.embedding_model,
+            "gemini-embedding-001",
+            "models/gemini-embedding-001",
+            "text-embedding-005",
+            "models/text-embedding-005",
+            "text-embedding-004",
+            "models/text-embedding-004",
+            "embedding-001",
+            "models/embedding-001",
+        ]
+        seen = set()
+        candidates = [c for c in raw_candidates if c and not (c in seen or seen.add(c))]
+
+        last_err = ""
         for model_name in candidates:
             try:
-                resp = self.client.models.embed_content(
-                    model=model_name,
-                    contents=query.strip(),
-                )
+                try:
+                    resp = self.client.models.embed_content(
+                        model=model_name,
+                        contents=query.strip(),
+                        config=types.EmbedContentConfig(output_dimensionality=768),
+                    )
+                except Exception:
+                    resp = self.client.models.embed_content(
+                        model=model_name,
+                        contents=query.strip(),
+                    )
                 if resp.embeddings:
                     self.embedding_model = model_name
                     return resp.embeddings[0].values
             except Exception as e:
-                if "404" in str(e) or "not found" in str(e).lower():
-                    continue
-                raise e
+                last_err = str(e)
+                continue
 
-        raise RuntimeError(f"Failed to generate embedding for query: {query}")
+        raise RuntimeError(f"Failed to generate embedding for query: {query}. Error: {last_err}")
 
     def retrieve(
         self,
