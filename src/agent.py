@@ -15,6 +15,7 @@ from src.config import (
     SYSTEM_PROMPT,
     UNPROVEN_RESPONSE,
     get_api_key,
+    create_genai_client,
 )
 from src.retriever import DocumentRetriever
 
@@ -55,7 +56,7 @@ class DocumentQAAgent:
             raise ValueError("Gemini API key is required to initialize DocumentQAAgent.")
 
         self.model_name = model_name
-        self.client = genai.Client(api_key=self.api_key)
+        self.client = create_genai_client(api_key=self.api_key)
         self.retriever = retriever or DocumentRetriever(api_key=self.api_key)
 
     def extract_citations(

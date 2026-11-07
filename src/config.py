@@ -2,6 +2,9 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Ensure the Google GenAI SDK targets v1beta (where text-embedding-004 resides)
+os.environ.setdefault("GOOGLE_GENAI_API_VERSION", "v1beta")
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -40,3 +43,18 @@ UNPROVEN_RESPONSE = "I cannot prove this from the available documents."
 def get_api_key() -> str:
     """Retrieve Gemini API Key from environment or return empty string."""
     return os.getenv("GEMINI_API_KEY", "").strip()
+
+
+def create_genai_client(api_key: str):
+    """
+    Create a Gemini Client configured with v1beta endpoint to support
+    text-embedding-004 and modern multimodal capabilities.
+    """
+    from google import genai
+    from google.genai import types
+
+    return genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(api_version="v1beta"),
+    )
+

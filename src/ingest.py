@@ -24,6 +24,7 @@ from src.config import (
     CHUNK_OVERLAP_TOKENS,
     ESTIMATED_CHARS_PER_TOKEN,
     get_api_key,
+    create_genai_client,
 )
 
 
@@ -163,36 +164,70 @@ def generate_gemini_embeddings(
 ) -> List[List[float]]:
     """
     Generate embeddings for a list of texts using the official google-genai SDK.
-    Processes in batches to observe rate limits.
+    Configured with v1beta endpoint to support text-embedding-004.
     """
     if not api_key:
         raise ValueError("Gemini API key is required to generate embeddings.")
 
-    client = genai.Client(api_key=api_key)
+    client = create_genai_client(api_key=api_key)
     all_embeddings = []
+
+    # Model candidates to try if specified model returns 404
+    candidate_models = [model]
+    if not model.startswith("models/"):
+        candidate_models.append(f"models/{model}")
+    else:
+        candidate_models.append(model.replace("models/", ""))
+    if "text-embedding-004" not in candidate_models:
+        candidate_models.append("text-embedding-004")
+    candidate_models.append("embedding-001")
+
+    working_model = None
 
     for i in range(0, len(texts), batch_size):
         batch = texts[i:i + batch_size]
-        try:
-            response = client.models.embed_content(
-                model=model,
-                contents=batch,
-            )
-            # EmbedContentResponse contains embeddings list with values
-            batch_vectors = [emb.values for emb in response.embeddings]
-            all_embeddings.extend(batch_vectors)
-        except Exception as exc:
-            # Fall back to single-item embedding if a batch fails
-            print(f"[ingest] Batch embedding warning: {exc}. Retrying individually...", file=sys.stderr)
-            for single_text in batch:
-                single_resp = client.models.embed_content(
-                    model=model,
-                    contents=single_text,
+        embedded = False
+
+        models_to_attempt = [working_model] if working_model else candidate_models
+
+        for candidate in models_to_attempt:
+            if not candidate:
+                continue
+            try:
+                response = client.models.embed_content(
+                    model=candidate,
+                    contents=batch,
                 )
-                if single_resp.embeddings:
-                    all_embeddings.append(single_resp.embeddings[0].values)
+                batch_vectors = [emb.values for emb in response.embeddings]
+                all_embeddings.extend(batch_vectors)
+                working_model = candidate
+                embedded = True
+                break
+            except Exception as batch_exc:
+                err_msg = str(batch_exc)
+                if "404" in err_msg or "not found" in err_msg.lower():
+                    continue
                 else:
-                    raise RuntimeError("Failed to obtain embedding from Gemini API.")
+                    # Retry item by item if batch fails
+                    try:
+                        for single_text in batch:
+                            s_resp = client.models.embed_content(
+                                model=candidate,
+                                contents=single_text,
+                            )
+                            if s_resp.embeddings:
+                                all_embeddings.append(s_resp.embeddings[0].values)
+                        working_model = candidate
+                        embedded = True
+                        break
+                    except Exception:
+                        continue
+
+        if not embedded:
+            raise RuntimeError(
+                f"Failed to generate embeddings. Tried models: {candidate_models}. "
+                "Please verify your Gemini API key has access to the Gemini Embeddings API."
+            )
 
     return all_embeddings
 

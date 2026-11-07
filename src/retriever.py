@@ -15,6 +15,7 @@ from src.config import (
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_TOP_K,
     get_api_key,
+    create_genai_client,
 )
 from src.ingest import get_chroma_collection
 
@@ -34,18 +35,34 @@ class DocumentRetriever:
 
         self.db_path = Path(db_path)
         self.embedding_model = embedding_model
-        self.client = genai.Client(api_key=self.api_key)
+        self.client = create_genai_client(api_key=self.api_key)
         self.collection = get_chroma_collection(self.db_path)
 
     def embed_query(self, query: str) -> List[float]:
-        """Generate embedding vector for search query."""
-        resp = self.client.models.embed_content(
-            model=self.embedding_model,
-            contents=query.strip(),
-        )
-        if not resp.embeddings:
-            raise RuntimeError(f"Failed to generate embedding for query: {query}")
-        return resp.embeddings[0].values
+        """Generate embedding vector for search query with model fallback."""
+        candidates = [self.embedding_model]
+        if not self.embedding_model.startswith("models/"):
+            candidates.append(f"models/{self.embedding_model}")
+        else:
+            candidates.append(self.embedding_model.replace("models/", ""))
+        candidates.append("text-embedding-004")
+        candidates.append("embedding-001")
+
+        for model_name in candidates:
+            try:
+                resp = self.client.models.embed_content(
+                    model=model_name,
+                    contents=query.strip(),
+                )
+                if resp.embeddings:
+                    self.embedding_model = model_name
+                    return resp.embeddings[0].values
+            except Exception as e:
+                if "404" in str(e) or "not found" in str(e).lower():
+                    continue
+                raise e
+
+        raise RuntimeError(f"Failed to generate embedding for query: {query}")
 
     def retrieve(
         self,
