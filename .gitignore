@@ -1,0 +1,23 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pytest & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ChromaDB & Vector Store
+vector_db/
+
+# Local Environment & Secrets
+.env
+
+# Streamlit
+.streamlit/
