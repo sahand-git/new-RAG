@@ -10,6 +10,7 @@ Features:
 
 import os
 import sys
+import importlib
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import streamlit as st
@@ -17,6 +18,19 @@ import streamlit.components.v1 as components
 
 # Add parent directory to Python path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+# Import and dynamically reload core modules so code updates take effect immediately
+import src.config
+import src.ingest
+import src.retriever
+import src.agent
+import src.pdf_viewer
+
+importlib.reload(src.config)
+importlib.reload(src.ingest)
+importlib.reload(src.retriever)
+importlib.reload(src.agent)
+importlib.reload(src.pdf_viewer)
 
 from src.config import (
     DOCUMENTS_DIR,
